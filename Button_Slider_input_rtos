@@ -1,0 +1,99 @@
+// This code takes the slider input send to esp32 on an specific event like button press
+#include "Nextion.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+// Declare your Nextion button objects for page 1
+NexButton b0 = NexButton(0, 7, "b1"); // Temperature setting button
+NexButton b1 = NexButton(0, 8, "b2"); // Humidity setting button
+NexButton b2 = NexButton(1, 3, "b0"); // Temperature save button
+NexButton b3 = NexButton(1, 4, "b1"); // Temperature Reset Button
+NexButton b4 = NexButton(2, 5, "b3"); // Humidity Reset Button
+NexButton b5 = NexButton(2, 4, "b2"); // Humidity Reset Button
+NexText t0 = NexText(2, 5, "t2");     // Text component on page 0 with ID 
+
+// Register the button objects to the touch event list
+NexTouch *nex_listen_list[] = {
+  &b0, &b1, &b2, &b3, &b4, &b5,
+  NULL
+};
+
+// Task handles
+TaskHandle_t nextionTaskHandle;
+
+
+// Callback functions for button press events
+void b0PopCallback(void *ptr) {
+  Serial.println("Button 1 pressed");
+}
+
+void b1PopCallback(void *ptr) {
+  Serial.println("Button 2 pressed");
+}
+
+void b2PopCallback(void *ptr) {
+  Serial.println("Button 3 pressed");
+
+  // Read a value from the Nextion
+  char buffer[100] = {0}; // Buffer to store the received data
+  uint32_t len = sizeof(buffer) - 1; // Maximum length to read
+
+  // Use the library's command to read the text component t0
+  if (t0.getText(buffer, len)) {
+    Serial.println("Data received from Nextion: ");
+    Serial.println(buffer);
+    
+  } else {
+    Serial.println("Failed to read data from Nextion.");
+  }
+}
+
+void b3PopCallback(void *ptr) {
+  Serial.println("Button 4 pressed");
+}
+
+void b4PopCallback(void *ptr) {
+  Serial.println("Button 5 pressed");
+}
+
+void b5PopCallback(void *ptr) {
+  Serial.println("Button 6 pressed");
+}
+
+// FreeRTOS task for Nextion
+void nextionTask(void *pvParameters) {
+  while (1) {
+    nexLoop(nex_listen_list); // Listen for button press events
+    vTaskDelay(pdMS_TO_TICKS(50)); // Check events every 50 ms
+  }
+}
+
+
+
+void setup() {
+  Serial.begin(9600);
+
+  // Initialize UART2 for communication with Nextion
+  Serial2.begin(9600, SERIAL_8N1, 16, 17); // Change 16, 17 to your UART2 TX, RX pins
+
+  // Initialize the Nextion display using UART2
+  nexInit();
+
+  // Attach the callback functions to the button objects
+  b0.attachPop(b0PopCallback);
+  b1.attachPop(b1PopCallback);
+  b2.attachPop(b2PopCallback);
+  b3.attachPop(b3PopCallback);
+  b4.attachPop(b4PopCallback);
+  b5.attachPop(b5PopCallback);
+
+  Serial.println("Setup completed.");
+
+  // Create FreeRTOS tasks
+  xTaskCreate(nextionTask, "Nextion Task", 2048, NULL, 1, &nextionTaskHandle);
+
+}
+
+void loop() {
+  // The main loop is not used when FreeRTOS tasks are running
+}
