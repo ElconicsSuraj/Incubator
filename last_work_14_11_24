@@ -62,10 +62,13 @@ NexButton b3 = NexButton(1, 4, "b1"); // Temperature Reset Button
 NexButton b4 = NexButton(2, 5, "b3"); // Humidity Reset Button
 NexButton b5 = NexButton(2, 4, "b2"); // Humidity Reset Button
 NexText t2 = NexText(2, 5, "t2");     // Text component on page 0 with ID 
+NexText t3 = NexText(0, 9, "t3");     // Text component on page 0 with ID 
+NexButton b6 = NexButton(1, 6, "b2");     // Back Button temp page
+NexButton b7 = NexButton(2, 7, "b4");     // back button Humidity page
 
 // Register the button objects to the touch event list
 NexTouch *nex_listen_list[] = {
-  &b0, &b1, &b2, &b3, &b4, &b5,
+  &b0, &b1, &b2, &b3, &b4, &b5,&b6,&b7,
   NULL
 };
 
@@ -80,11 +83,10 @@ TaskHandle_t LedTaskHandle;
 // Callback functions for button press events
 void b0PopCallback(void *ptr) {
   Serial.println("Button 1 pressed");
-//   vTaskSuspend(LedTaskHandle); 
-//   vTaskSuspend(TempretureTaskHandle);
-//   vTaskSuspend(TempretureTaskHandle);
-   vTaskSuspend(HumidityTaskHandle);
-    Serial.println("Humidity task suspended");
+
+ //  vTaskSuspend(HumidityTaskHandle);
+  // Serial.println("Humidity task suspended");
+ 
 }
 
 void b1PopCallback(void *ptr) {
@@ -98,21 +100,43 @@ void b2PopCallback(void *ptr) {
   char buffer[100] = {0}; // Buffer to store the received data
   uint32_t len = sizeof(buffer) - 1; // Maximum length to read
 
-  // Use the library's command to read the text component t0
+  // Use the library's command to read the text component t2
   if (t2.getText(buffer, len)) {
-    Serial.println("Data received from Nextion: ");
+    Serial.println("Data received from Nextion:");
     Serial.println(buffer);
-    
+
+    // Convert the received string to a float
+    float receivedValue = atof(buffer);
+
+    // Set the temperature setpoint
+    Setpoint = receivedValue;
+    Serial.printf("Setpoint updated to: %.2f\n", Setpoint);
+
+    // Save the updated setpoint to EEPROM
+    SaveSettings();
+
+    // Update PID parameters based on the new setpoint
+    UpdatePIDParameters(Setpoint);
   } else {
     Serial.println("Failed to read data from Nextion.");
   }
 
-//   vTaskResume(LedTaskHandle);
-    vTaskResume(HumidityTaskHandle);
-      Serial.println("Humidity task Resume");
-//     vTaskResume(TempretureTaskHandle);
-//      vTaskResume(DoorTaskHandle);
+  // Resume HumidityTask if it was previously suspended
+  vTaskResume(HumidityTaskHandle);
+  Serial.println("Humidity task resumed");
 }
+
+//void b6PopCallback(void *ptr) {
+//  Serial.println("Back page Temp pressed");
+//   vTaskResume(HumidityTaskHandle);
+//}
+//
+//void b7PopCallback(void *ptr) {
+//  Serial.println("Back page humidity pressed");
+//}
+
+
+
 
 void b3PopCallback(void *ptr) {
   Serial.println("Button 4 pressed");
@@ -124,6 +148,15 @@ void b4PopCallback(void *ptr) {
 
 void b5PopCallback(void *ptr) {
   Serial.println("Button 6 pressed");
+}
+
+void b6PopCallback(void *ptr) {
+  Serial.println("Button 7 pressed");
+  vTaskResume(HumidityTaskHandle);
+}
+
+void b7PopCallback(void *ptr) {
+  Serial.println("Button 8 pressed");
 }
 
 // FreeRTOS task for Nextion
@@ -138,7 +171,7 @@ void nextionTask(void *pvParameters) {
 
 // Function prototypes for tasks
 void TemperatureTask(void *pvParameters);
-void ServerTask(void *pvParameters);
+//void ServerTask(void *pvParameters);
 void DoorTask(void *pvParameters);
 void StepperTask(void *pvParameters);
 void HumidityTask(void *pvParameters);
@@ -151,7 +184,7 @@ NexText t1 = NexText(1, 4, "t1"); // page 1, id 2 (humidity)
 // NeoPixel strip
 Adafruit_NeoPixel strip(NUM_PIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
-TaskHandle_t serverTaskHandle; // Task handle for ServerTask
+//TaskHandle_t serverTaskHandle; // Task handle for ServerTask
 SemaphoreHandle_t nextionMutex; // Mutex to ensure Nextion communication safety
 
 // Variables for reading and storing humidity and temperature
@@ -211,15 +244,17 @@ void setup() {
   b3.attachPop(b3PopCallback);
   b4.attachPop(b4PopCallback);
   b5.attachPop(b5PopCallback);
+  b6.attachPop(b6PopCallback);
+  b7.attachPop(b7PopCallback);
 
 
 
   // Create FreeRTOS tasks
-  xTaskCreate(nextionTask, "Nextion Task", 2048, NULL, 1, &nextionTaskHandle);
+  xTaskCreate(nextionTask, "Nextion Task", 8000, NULL, 3, &nextionTaskHandle);
 
   // Create FreeRTOS tasks with sufficient stack size
   xTaskCreate(TemperatureTask, "Temperature Control", 30000, NULL, 4, &TempretureTaskHandle);
-  //xTaskCreate(ServerTask, "Server Task", 15000, NULL, 1, &serverTaskHandle);
+//  xTaskCreate(ServerTask, "Server Task", 15000, NULL, 1, &serverTaskHandle);
   xTaskCreate(DoorTask, "Door Control", 10000, NULL, 0, &DoorTaskHandle);
   xTaskCreate(StepperTask, "Stepper Control", 12000, NULL, 2,NULL );
   xTaskCreate(HumidityTask, "Humidity Task", 12000, NULL, 3, &HumidityTaskHandle);
@@ -229,32 +264,32 @@ void setup() {
 }
 
 void loop() {
-  // Monitor heap space every 5 seconds
- Serial.printf("Free heap: %d bytes\n", esp_get_free_heap_size());
-  vTaskDelay(pdMS_TO_TICKS(5000)); // Delay in main loop
-
-  // Check if there's data available in the Serial buffer
-  if (Serial.available()) {
-    String input = Serial.readStringUntil('\n');  // Read input from Serial Monitor
-
-    // Check if input starts with "temp" to set the temperature setpoint
-    if (input.startsWith("temp")) {
-      // Extract the temperature value after the command
-      float newTemp = input.substring(5).toFloat();
-      Setpoint = newTemp;  // Set the new temperature setpoint
-      Serial.print("Temperature setpoint updated to: ");
-      Serial.println(Setpoint);
-    }
-
-    // Check if input starts with "humi" to set the humidity
-    if (input.startsWith("humi")) {
-      // Extract the humidity value after the command
-      float newHumi = input.substring(5).toFloat();
-      // Set the new humidity value (You can add logic to control the humidity here)
-      Serial.print("Humidity setpoint updated to: ");
-      Serial.println(newHumi);
-    }
-  }
+//  // Monitor heap space every 5 seconds
+// Serial.printf("Free heap: %d bytes\n", esp_get_free_heap_size());
+//  vTaskDelay(pdMS_TO_TICKS(5000)); // Delay in main loop
+//
+//  // Check if there's data available in the Serial buffer
+//  if (Serial.available()) {
+//    String input = Serial.readStringUntil('\n');  // Read input from Serial Monitor
+//
+//    // Check if input starts with "temp" to set the temperature setpoint
+//    if (input.startsWith("temp")) {
+//      // Extract the temperature value after the command
+//      float newTemp = input.substring(5).toFloat();
+//      Setpoint = newTemp;  // Set the new temperature setpoint
+//      Serial.print("Temperature setpoint updated to: ");
+//      Serial.println(Setpoint);
+//    }
+//
+//    // Check if input starts with "humi" to set the humidity
+//    if (input.startsWith("humi")) {
+//      // Extract the humidity value after the command
+//      float newHumi = input.substring(5).toFloat();
+//      // Set the new humidity value (You can add logic to control the humidity here)
+//      Serial.print("Humidity setpoint updated to: ");
+//      Serial.println(newHumi);
+//    }
+//  }
 }
 
 // Task 1: Temperature Control with DS18B20 Sensor
@@ -302,6 +337,8 @@ void TemperatureTask(void *pvParameters) {
     // Update the Nextion display with a timeout
     if (xSemaphoreTake(nextionMutex, pdMS_TO_TICKS(100))) {
       bool success = t0.setText(String(currentTemp).c_str());
+     // Serial.println(Setpoint);
+      t3.setText(String(Setpoint).c_str());
       xSemaphoreGive(nextionMutex);
       if (success) {
         Serial.println("Temperature updated on display");
@@ -445,6 +482,3 @@ void SaveHumidity() {
   EEPROM.commit();  // Commit changes
   Serial.println("Humidity saved to EEPROM");
 }
-
-
-
