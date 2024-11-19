@@ -56,22 +56,41 @@ int stepDelay = 50000; // Microseconds between steps
 double stepperRMS = 0; // RMS value for the stepper motor
 
 
+// Declear Your text
+// text page 0
+NexText t3 = NexText(0, 9, "t3");     // Text component on page 0 with ID
+
+
+// text page 1
+NexText t_temp_val = NexText(0, 5, "t0"); // page 1, id 1 (temperature)
+NexText t_humi_val = NexText(0, 4, "t1"); // page 1, id 2 (humidity)
+NexText t_temp_set = NexText(0, 7, "t4"); // page 1, id 2 (Set temp value)
+NexText t_humi_set = NexText(0, 10, "t2"); // page 1, id 2 (Set temp value)
+
+// text page 3
+NexText t2 = NexText(2, 5, "t2");     // Text component on page 0 with ID 
+
 
 // Declare your Nextion button objects for page 1
-NexButton b0 = NexButton(0, 7, "b1"); // Temperature setting button
-NexButton b1 = NexButton(0, 8, "b2"); // Humidity setting button
-NexButton b2 = NexButton(1, 3, "b0"); // Temperature save button
-NexButton b3 = NexButton(1, 4, "b1"); // Temperature Reset Button
-NexButton b4 = NexButton(2, 5, "b3"); // Humidity Reset Button
-NexButton b5 = NexButton(2, 4, "b2"); // Humidity Reset Button
-NexText t2 = NexText(2, 5, "t2");     // Text component on page 0 with ID 
-NexText t3 = NexText(0, 9, "t3");     // Text component on page 0 with ID 
-NexButton b6 = NexButton(1, 6, "b2");     // Back Button temp page
-NexButton b7 = NexButton(2, 7, "b4");     // back button Humidity page
+
+// main page
+NexButton b_temp_setting = NexButton(0, 7, "b1"); // Temperature setting button
+NexButton b_humi_setting = NexButton(0, 8, "b2"); // Humidity setting button
+
+// Tempreture setting page
+NexButton b_temp_save = NexButton(1, 3, "b0"); // Temperature save button
+NexButton b_temp_reset = NexButton(1, 4, "b1"); // Temperature Reset Button
+NexButton b_temp_back = NexButton(1, 6, "b2");     // Back Button temp page
+
+// Humidity setting page
+NexButton b_save_humi = NexButton(3, 3, "b0");     // save Humidity
+NexButton b_humi_reset = NexButton(3, 4, "b1"); // Humidity Reset Button
+NexButton b_humi_back = NexButton(3, 6, "b2"); // back humidity button
+
 
 // Register the button objects to the touch event list
 NexTouch *nex_listen_list[] = {
-  &b0, &b1, &b2, &b3, &b4, &b5,&b6,&b7,
+  &b_temp_setting, &b_humi_setting, &b_temp_save, &b_temp_reset, &b_humi_back, &b_humi_back,&b_temp_back,&b_save_humi,
   NULL
 };
 
@@ -84,20 +103,22 @@ TaskHandle_t LedTaskHandle;
 
 
 // Callback functions for button press events
-void b0PopCallback(void *ptr) {
-  Serial.println("Button 1 pressed");
+void b_temp_settingPopCallback(void *ptr) {
+  Serial.println("Tempreture setting is pressed");
 
- //  vTaskSuspend(HumidityTaskHandle);
-  // Serial.println("Humidity task suspended");
+   vTaskSuspend(HumidityTaskHandle);
+   Serial.println("Humidity task suspended");
  
 }
 
-void b1PopCallback(void *ptr) {
-  Serial.println("Button 2 pressed");
+void b_humi_settingPopCallback(void *ptr) {
+  Serial.println("Humidity Setting Button is pressed");
+     vTaskSuspend(HumidityTaskHandle);
+   Serial.println("Humidity task suspended");
 }
 
-void b2PopCallback(void *ptr) {
-  Serial.println("Button 3 pressed");
+void b_temp_savePopCallback(void *ptr) {
+  Serial.println("Tempreture save button is saved");
 
   // Read a value from the Nextion
   char buffer[100] = {0}; // Buffer to store the received data
@@ -129,37 +150,63 @@ void b2PopCallback(void *ptr) {
   Serial.println("Humidity task resumed");
 }
 
-//void b6PopCallback(void *ptr) {
-//  Serial.println("Back page Temp pressed");
-//   vTaskResume(HumidityTaskHandle);
-//}
-//
-//void b7PopCallback(void *ptr) {
-//  Serial.println("Back page humidity pressed");
-//}
 
 
 
 
-void b3PopCallback(void *ptr) {
-  Serial.println("Button 4 pressed");
+
+void b_temp_resetPopCallback(void *ptr) {
+  Serial.println("Temp reset pressed");
 }
 
-void b4PopCallback(void *ptr) {
-  Serial.println("Button 5 pressed");
+void b_humi_resetPopCallback(void *ptr) {
+ Serial.println("Humidity Reset button is pressed");
 }
 
-void b5PopCallback(void *ptr) {
-  Serial.println("Button 6 pressed");
+void b_humi_backPopCallback(void *ptr) {
+  Serial.println("Back button is pressed");
+   vTaskResume(HumidityTaskHandle);
 }
 
-void b6PopCallback(void *ptr) {
+void b_temp_backPopCallback(void *ptr) {
   Serial.println("Button 7 pressed");
   vTaskResume(HumidityTaskHandle);
 }
 
-void b7PopCallback(void *ptr) {
-  Serial.println("Button 8 pressed");
+void b_save_humiPopCallback(void *ptr) {
+
+    Serial.println("Humidity save button is saved");
+
+  // Read a value from the Nextion
+  char buffer[100] = {0}; // Buffer to store the received data
+  uint32_t len = sizeof(buffer) - 1; // Maximum length to read
+
+  // Use the library's command to read the text component t2
+  if (t2.getText(buffer, len)) {
+    Serial.println("Data received from Nextion:");
+    Serial.println(buffer);
+
+    // Convert the received string to a float
+    float receivedValue = atof(buffer);
+
+    // Set the temperature setpoint
+    Setpoint = receivedValue;
+    Serial.printf("Setpoint updated to: %.2f\n", Setpoint);
+
+    // Save the updated setpoint to EEPROM
+    SaveSettings();
+
+    // Update PID parameters based on the new setpoint
+    UpdatePIDParameters(Setpoint);
+  } else {
+    Serial.println("Failed to read data from Nextion.");
+  }
+
+  // Resume HumidityTask if it was previously suspended
+  vTaskResume(HumidityTaskHandle);
+  Serial.println("Humidity task resumed");
+
+  
 }
 
 // FreeRTOS task for Nextion
@@ -180,10 +227,7 @@ void StepperTask(void *pvParameters);
 void HumidityTask(void *pvParameters);
 void updateLEDColor(double temperature);
 
-// Nextion display
-NexText t0 = NexText(1, 5, "t0"); // page 1, id 1 (temperature)
-NexText t1 = NexText(1, 4, "t1"); // page 1, id 2 (humidity)
-NexText t4 = NexText(1, 7, "t4"); // page 1, id 2 (humidity)
+
 
 // NeoPixel strip
 Adafruit_NeoPixel strip(NUM_PIXELS, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -242,14 +286,14 @@ void setup() {
   LoadSettings();
   
   // Attach the callback functions to the button objects
-  b0.attachPop(b0PopCallback);
-  b1.attachPop(b1PopCallback);
-  b2.attachPop(b2PopCallback);
-  b3.attachPop(b3PopCallback);
-  b4.attachPop(b4PopCallback);
-  b5.attachPop(b5PopCallback);
-  b6.attachPop(b6PopCallback);
-  b7.attachPop(b7PopCallback);
+  b_temp_setting.attachPop(b_temp_settingPopCallback);
+  b_humi_setting.attachPop(b_humi_settingPopCallback);
+  b_temp_save.attachPop(b_temp_savePopCallback);
+  b_temp_reset.attachPop(b_temp_resetPopCallback);
+  b_humi_reset.attachPop(b_humi_backPopCallback);
+  b_humi_back.attachPop(b_humi_resetPopCallback);
+  b_temp_back.attachPop(b_temp_backPopCallback);
+  b_save_humi.attachPop(b_save_humiPopCallback);
 
 
 
@@ -340,10 +384,10 @@ void TemperatureTask(void *pvParameters) {
 
     // Update the Nextion display with a timeout
     if (xSemaphoreTake(nextionMutex, pdMS_TO_TICKS(100))) {
-      bool success = t0.setText(String(currentTemp).c_str());
+      bool success = t_temp_val.setText(String(currentTemp).c_str());
      // Serial.println(Setpoint);
       t3.setText(String(Setpoint).c_str());
-      t4.setText(String(Setpoint).c_str());
+      t_temp_set.setText(String(Setpoint).c_str());
       xSemaphoreGive(nextionMutex);
       if (success) {
         Serial.println("Temperature updated on display");
@@ -433,7 +477,7 @@ void HumidityTask(void *pvParameters) {
 
     // Send humidity to Nextion safely
     if (xSemaphoreTake(nextionMutex, pdMS_TO_TICKS(100))) {
-      bool success = t1.setText(String(humidity).c_str());
+      bool success = t_humi_val.setText(String(humidity).c_str());
       if (success) {
         Serial.println("Humidity updated on display");
       } else {
